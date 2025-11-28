@@ -1,0 +1,16 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Secrets (CRITICAL)
+.env
+*.env
+
+# Results
+results/*
+!results/.gitkeep
+history/
+
+# OS
+.DS_Store

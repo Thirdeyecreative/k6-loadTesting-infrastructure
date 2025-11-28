@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API Load Test</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --primary: #2d6cdf; --muted: #667085; --border: #c6c6c6
+      --bg: #ffffff; --card: #fafafa;
+      --success: #4088d9;         /* Bluish color */
+      --danger: #ef4444;          /* Red color */
+    }
+    html,body{background:var(--bg); color:#111; font:16px/1.5 -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";}
+    .container{max-width:1180px; margin:24px auto 48px; padding:0 16px;}
+    header{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;}
+    .brand{display:flex; align-items:center; ;}
+    .logo{width: 180px; height: px; object-fit: contain; margin-top: -2px}
+    h1{font-size:36px; margin:0;}
+    .sub{font-size:12px; color:var(--muted); margin-top:2px;}
+    .meta {
+      display: grid;
+      flex-shrink: 1;
+      grid-template-columns: repeat(8, auto); /* 4 label-value pairs per row */
+      border-collapse: collapse;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    .cell {
+      border: 1px solid #ddd;
+      padding: 6px 10px;
+    }
+    
+    .label {
+      font-weight: 600;
+      background: #f7f7f7;
+      text-align: left;
+      white-space: nowrap;
+    }    
+    
+    .meta strong { color: #111; }
+    .card{background:#fff; border:2px solid var(--border); border-radius:12px; padding:18px 18px 14px;}
+    .grid{display:grid; gap:16px;}
+    .grid.kpis{grid-template-columns:repeat(4,1fr);} 
+    .grid.charts{grid-template-columns:1fr;}
+    @media(min-width:1000px){.grid.charts{grid-template-columns:1fr 1fr}}
+    .kpi{display:flex; align-items:baseline; justify-content:space-between;}
+    .kpi .val{font-size:22px; font-weight:700;}
+    .kpi .note{font-size:12px; color:var(--muted);} 
+    table{width:100%; border-collapse:collapse;}
+    th, td{border:1px solid var(--border); padding:8px 10px; text-align:right; font-variant-numeric:tabular-nums;}
+    th:first-child, td:first-child{text-align:left;}
+    th{background:#f6f8fa; font-weight:700;}
+    .chart-wrap{height:280px;}
+    @media print{
+      @page{size:A4 portrait; margin:12mm;}
+      .container{margin:0 auto;}
+      .chart-wrap{height:240px; break-inside:avoid;}
+      .card, header, table{break-inside:avoid;}
+      .grid.kpis{grid-template-columns:repeat(4,1fr);} 
+      .logo { height:8mm !important; width:auto !important; object-fit:contain !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div>
+          <h1>Performance Testing</h1>
+          <div class="sub" id="subtitle">Loading latest test results...</div>
+        </div>
+      </div>
+      <div class="brand">
+        <img src="./logo.png" alt="Company Logo" class="logo" onerror="this.style.display='none';"/>
+      </div>
+    </header>
+
+    <section class="grid kpis" id="kpis">
+      <div class="card"><div class="kpi"><div><h3>Total HTTP Requests</h3><div class="note">http_reqs (count)</div></div><div class="val" id="kpi-reqs">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Iterations</h3><div class="note">iterations (count)</div></div><div class="val" id="kpi-iters">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Avg Response Time</h3><div class="note">http_req_duration (avg, ms)</div></div><div class="val" id="kpi-avg">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>P90 / P95</h3><div class="note">http_req_duration (ms)</div></div><div class="val" id="kpi-px">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Failure Rate</h3><div class="note">http_req_failed (rate)</div></div><div class="val" id="kpi-fail">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Max VUs</h3><div class="note">vus_max</div></div><div class="val" id="kpi-vus">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Data Sent</h3><div class="note">bytes</div></div><div class="val" id="kpi-sent">—</div></div></div>
+      <div class="card"><div class="kpi"><div><h3>Data Received</h3><div class="note">bytes</div></div><div class="val" id="kpi-recv">—</div></div></div>
+    </section>
+
+    <section class="grid charts" style="margin-top:12px;">
+      <div class="card"><h3>Throughput Overview</h3><div class="chart-wrap"><canvas id="bar-overview"></canvas></div></div>
+      <div class="card"><h3>Iteration Duration (avg, p90, p95)</h3><div class="chart-wrap"><canvas id="line-iter"></canvas></div></div>
+      <div class="card"><h3>HTTP Request Duration (avg, p90, p95)</h3><div class="chart-wrap"><canvas id="line-http"></canvas></div></div>
+      <div class="card"><h3>Checks: Pass vs Fail</h3><div class="chart-wrap"><canvas id="pie-checks"></canvas></div></div>
+    </section>
+
+    <section class="card" style="margin-top:12px;">
+      <h3>Aggregate Report</h3>
+      <div class="table-wrap"><table id="agg-table"><thead><tr><th>Metric</th><th>avg</th><th>min</th><th>med</th><th>max</th><th>p90</th><th>p95</th><th>count</th></tr></thead><tbody></tbody></table></div>
+    </section>
+    <br>
+    <div class="meta">
+      <div class="cell label">Date:</div>
+      <div class="cell" id="meta-date">—</div>
+      <div class="cell label">API Name:</div>
+      <div class="cell" id="meta-name">—</div>
+    
+      <div class="cell label">Test Type:</div>
+      <div class="cell" id="meta-test-type">—</div>
+      <div class="cell label">Method:</div>
+      <div class="cell" id="meta-method">—</div>
+    
+      <div class="cell label">Endpoint:</div>
+      <div class="cell" id="meta-endpoint">—</div>
+      <div class="cell label">Base URL:</div>
+      <div class="cell" id="meta-base-url">—</div>
+    </div> 
+    <p style="text-align: center; font-size: 10px; margin-top: 20px; opacity: 0.8; color: #667085;">by your security wala</p>    
+  </div>
+
+<script>
+(function(){
+  const $ = (sel) => document.querySelector(sel);
+  const fmtInt = (n)=> (isFinite(n) ? Math.round(n).toLocaleString() : '—');
+  const fmtMs  = (n)=> (isFinite(n) ? (Math.round(n*100)/100).toLocaleString() : '—');
+  const fmtPct = (n)=> (isFinite(n) ? (n*100).toFixed(2)+"%" : '—');
+
+  function parseCSV(text){
+    const rows = text.replace(/\r/g,'').trim().split(/\n+/);
+    if(!rows.length) return {};
+    const header = rows.shift().split(',').map(s=>s.trim());
+    const idx = { metric: header.indexOf('metric'), type: header.indexOf('type'), value: header.indexOf('value') };
+    const data = {};
+    for(const r of rows){
+      const parts = r.split(',');
+      if(parts.length < 3) continue;
+      const metric = parts[idx.metric]?.trim().replace(/{.*/, '');
+      const mtype  = parts[idx.type]?.trim();
+      let kv = parts[idx.value]?.trim();
+      if(!metric || !mtype || !kv) continue;
+      if (kv.startsWith('"') && kv.endsWith('"')) kv = kv.slice(1, -1);
+      const [key, rawVal] = kv.split('=');
+      const value = Number(rawVal);
+      if(!data[metric]) data[metric] = {};
+      if(!data[metric][mtype]) data[metric][mtype] = {};
+      data[metric][mtype][key] = isFinite(value) ? value : rawVal;
+    }
+    return data;
+  }
+
+  function pick(obj, path, dflt){
+    try{ return path.reduce((o,k)=> (o && k in o) ? o[k] : undefined, obj) ?? dflt; }
+    catch{ return dflt; }
+  }
+
+  function buildMeta(meta) {
+    $('#meta-name').textContent = meta.requestName || '—';
+    $('#meta-test-type').textContent = meta.testType ? meta.testType.charAt(0).toUpperCase() + meta.testType.slice(1) : '—';
+    $('#meta-method').textContent = meta.requestMethod || '—';
+    $('#meta-base-url').textContent = meta.baseUrl || '—';
+    
+    // --- Start of new logic ---
+    let endpointToDisplay = meta.endpoint || '—';
+    const parts = endpointToDisplay.split('/');
+    const lastPart = parts[parts.length - 1];
+  
+    // Heuristic to detect a JWT: check if it's a long string containing dots.
+    if (lastPart.length > 50 && lastPart.includes('.')) {
+      // Replace the long token with a clean placeholder
+      parts[parts.length - 1] = '{token}'; 
+      endpointToDisplay = parts.join('/');
+    }
+    
+    $('#meta-endpoint').textContent = endpointToDisplay;
+    // --- End of new logic ---
+    
+    const date = meta.timestamp ? new Date(meta.timestamp) : new Date();
+    $('#meta-date').textContent = new Intl.DateTimeFormat(undefined, { year:'numeric', month:'short', day:'2-digit', hour: '2-digit', minute: '2-digit' }).format(date);
+  }
+
+  function buildKPIs(db){
+    const httpReqs = pick(db, ['http_reqs','counter','count']);
+    const iterations = pick(db, ['iterations','counter','count']);
+    const httpAvg = pick(db, ['http_req_duration','trend','avg']);
+    const httpP90 = pick(db, ['http_req_duration','trend','p(90)'], pick(db,['http_req_duration','trend','p90']));
+    const httpP95 = pick(db, ['http_req_duration','trend','p(95)'], pick(db,['http_req_duration','trend','p95']));
+    const failRate = pick(db, ['http_req_failed','rate','rate']);
+    const vusMax = pick(db, ['vus_max','gauge','value'], pick(db,['vus_max','gauge','max']));
+    const sent = pick(db,['data_sent','counter','count'], pick(db,['bytes_sent','counter','count']));
+    const recv = pick(db,['data_received','counter','count'], pick(db,['bytes_received','counter','count']));
+    $('#kpi-reqs').textContent = fmtInt(httpReqs);
+    $('#kpi-iters').textContent = fmtInt(iterations);
+    $('#kpi-avg').textContent = isFinite(httpAvg) ? fmtMs(httpAvg) + ' ms' : '—';
+    $('#kpi-px').textContent = [httpP90,httpP95].every(isFinite) ? `${fmtMs(httpP90)} / ${fmtMs(httpP95)} ms` : '—';
+    $('#kpi-fail').textContent = isFinite(failRate) ? fmtPct(failRate) : '—';
+    $('#kpi-vus').textContent = fmtInt(vusMax);
+    $('#kpi-sent').textContent = fmtInt(sent);
+    $('#kpi-recv').textContent = fmtInt(recv);
+    return { httpReqs, iterations, sent, recv };
+  }
+
+  function buildCharts(db, kpis){
+    ['bar-overview', 'line-iter', 'line-http', 'pie-checks'].forEach(id => {
+        const chart = Chart.getChart(id); if(chart) chart.destroy();
+    });
+    if(!window.Chart) return;
+    new Chart($('#bar-overview'), { type:'bar', data:{ labels:['Data Sent','Data Received','HTTP Requests','Iterations'], datasets:[{ label:'Count', data:[kpis.sent||0, kpis.recv||0, kpis.httpReqs||0, kpis.iterations||0] }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true } } } });
+    const iter = db['iteration_duration']?.trend || {};
+    const iterSeries = ['avg','p(90)','p(95)'].map(k=> iter[k] ?? iter[k?.replace(/[()]/g,'')] );
+    new Chart($('#line-iter'), { type:'line', data:{ labels:['avg','p90','p95'], datasets:[{label:'iteration_duration (ms)', data: iterSeries.map(x=> x||0), tension:0.25}] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });
+    const http = db['http_req_duration']?.trend || {};
+    const httpSeries = ['avg','p(90)','p(95)'].map(k=> http[k] ?? http[k?.replace(/[()]/g,'')] );
+    new Chart($('#line-http'), { type:'line', data:{ labels:['avg','p90','p95'], datasets:[{label:'http_req_duration (ms)', data:httpSeries.map(x=> x||0), tension:0.25}] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });
+    const passes = pick(db,['checks','rate','passes'], 0);
+    const fails  = pick(db,['checks','rate','fails'], 0);
+    new Chart($('#pie-checks'), { type:'pie', data:{ labels:['Passes','Fails'], datasets:[{ data:[passes, fails], backgroundColor:['#4088d9', '#ef4444'] }]}, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}} } });
+  }
+  function buildAggregateTable(db){
+    const tbody = document.querySelector('#agg-table tbody');
+    tbody.innerHTML = '';
+    const candidates = ['http_req_duration', 'http_req_blocked', 'http_req_connecting', 'http_req_tls_handshaking', 'http_req_sending', 'http_req_waiting', 'http_req_receiving', 'iteration_duration'];
+    const rowFor = (metric) => {
+      const trend = db[metric]?.trend || {}; const counter = db[metric]?.counter || {};
+      const avg=trend['avg'], min=trend['min'], med=trend['med'], max=trend['max'], p90=trend['p(90)']??trend['p90'], p95=trend['p(95)']??trend['p95'], count=counter['count'];
+      if([avg,min,med,max,p90,p95,count].every(v=> v===undefined)) return null;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${metric.replace(/_/g,' ')}</td><td>${fmtMs(avg)}</td><td>${fmtMs(min)}</td><td>${fmtMs(med)}</td><td>${fmtMs(max)}</td><td>${fmtMs(p90)}</td><td>${fmtMs(p95)}</td><td>${fmtInt(count)}</td>`;
+      return tr;
+    }
+    candidates.forEach(m => { if(db[m]){ const r = rowFor(m); if(r) tbody.appendChild(r); } });
+  }
+
+  async function autoLoad() {
+    try {
+      const [csvResponse, metaResponse] = await Promise.all([
+        fetch('latest_results.csv?t=' + Date.now(), { cache: "no-store" }),
+        fetch('metadata.json?t=' + Date.now(), { cache: "no-store" })
+      ]);
+      if (!csvResponse.ok) throw new Error('Could not find latest_results.csv. Run a test first!');
+      const csvText = await csvResponse.text();
+      const metadata = metaResponse.ok ? await metaResponse.json() : {};
+      
+      const db = parseCSV(csvText);
+      buildMeta(metadata);
+      const kpis = buildKPIs(db);
+      buildCharts(db, kpis);
+      buildAggregateTable(db);
+      $('#subtitle').textContent = 'Summary, KPIs, Charts & Aggregate Report';
+
+    } catch (error) {
+      console.error(error);
+      $('#subtitle').textContent = error.message;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', autoLoad);
+})();
+</script>
+</body>
+</html>
