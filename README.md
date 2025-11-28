@@ -27,4 +27,7 @@ playwright install
 chmod +x run.sh
 
 ### run_test.py --config projects/demo-project/config.json
+```
+### 2. Create /results
+Create the results directory so that reports can be generated into it. 
 
